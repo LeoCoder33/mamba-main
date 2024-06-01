@@ -160,8 +160,8 @@ for i, line in enumerate(tqdm(lines)):
 torch.cuda.synchronize()
 print(f"{args.model_name} processing + time: {(time.time() - start)*1000:.0f}ms")
 with open(file_name, "w") as fp:
-    # for answer in answers:
-    #     fp.write(answer + "\n")
+    for answer in answers:
+        fp.write(answer + "\n")
     bleu_score = train_helper.run_multi_bleu(file_name, ref_file_name)
     print(bleu_score)
     fp.write("avg generation steps: {}, bleu: {:.4f}".format(
