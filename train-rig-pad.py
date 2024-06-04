@@ -63,15 +63,17 @@ class SFTDataset(Dataset):
             # Truncate the text if it's too long
             # mantain the context's head and tail
             context = ex['context']
-            if len(context) > 1024*30:
-                context = context[:1024*15] + context[-1024*15:]
-            context = f"Summarize the content into a few short sentences. Content:\n{context}\n\nSummary:\n"
-            label = f"{ex['response']}{tokenizer.eos_token}"
+            # if len(context) > 1024*30:
+            #     context = context[:1024*15] + context[-1024*15:]
+            # context = f"Summarize the content into a few short sentences. Content:\n{context}\n\nSummary:\n"
+            # trunk test
+            context = f"Summarize the"
+            # label = f"{ex['response']}{tokenizer.eos_token}"
+            label = ""
             context_id = tokenizer.encode(context)
             label_id = tokenizer.encode(label)
             all_input_ids.append(torch.LongTensor(context_id))
             all_label_ids.append(torch.LongTensor(label_id))
-
 
         return dict(input_ids=all_input_ids, label_ids=all_label_ids)
 
@@ -85,12 +87,13 @@ class DataCollatorForSFTDataset(object):
     tokenizer: transformers.PreTrainedTokenizer
 
     def __call__(self, instances):
-        instruction_ids, answer_ids = tuple([instance[key] for instance in instances] for key in ("input_ids", "label_ids"))
+        instruction_ids, answer_ids = tuple(
+            [instance[key] for instance in instances] for key in ("input_ids", "label_ids"))
         input_ids = []
         label_ids = []
         for instruction, answer in zip(instruction_ids, answer_ids):
             input_ids.append(torch.cat([instruction, answer], dim=-1))
-            label_ids.append(torch.cat([torch.tensor([-100]*instruction.shape[-1]), answer], dim=-1))
+            label_ids.append(torch.cat([torch.tensor([-100] * instruction.shape[-1]), answer], dim=-1))
         input_ids = torch.nn.utils.rnn.pad_sequence(input_ids, batch_first=True,
                                                     padding_value=self.tokenizer.pad_token_id)
         # pad_input_ids = torch.nn.utils.rnn.pad_sequence(label_ids, batch_first=True,
@@ -192,10 +195,10 @@ def run(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=str, default="state-spaces/mamba-1.4b")
-    parser.add_argument("--output", type=str, default="output")
+    parser.add_argument("--output", type=str, default="output/rig_pad")
     parser.add_argument("--tokenizer", type=str, default="EleutherAI/gpt-neox-20b")
     parser.add_argument("--learning_rate", type=float, default=5e-4)
-    parser.add_argument("--batch_size", type=int, default=2)
+    parser.add_argument("--batch_size", type=int, default=1)
     parser.add_argument("--gradient_accumulation_steps", type=int, default=4)
     parser.add_argument("--optim", type=str, default="adamw_torch")
     parser.add_argument("--data_path", type=str, default="./dataset/SummScreen/TVMegaSite/tms_train.jsonl")

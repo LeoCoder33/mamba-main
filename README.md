@@ -1,6 +1,7 @@
 # Mamba
 
 ![Mamba](assets/selection.png "Selective State Space")
+![Model](assets/mamba_architecture.png "Mamba Architecture")
 > **Mamba: Linear-Time Sequence Modeling with Selective State Spaces**\
 > Albert Gu*, Tri Dao*\
 > Paper: https://arxiv.org/abs/2312.00752
