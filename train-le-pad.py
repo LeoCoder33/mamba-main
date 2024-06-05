@@ -98,8 +98,8 @@ class DataCollatorForSFTDataset(object):
         max_len = max([len(ids) for ids in input_ids])
         # left padding
         for i in range(len(input_ids)):
-            input_ids[i] = torch.cat([torch.tensor([self.tokenizer.pad_token_id] * (max_len - len(input_ids[i]))), input_ids[i]])
-            label_ids[i] = torch.cat([torch.tensor([-100] * (max_len - len(label_ids[i]))), label_ids[i]])
+            input_ids[i] = torch.cat([torch.tensor([self.tokenizer.pad_token_id] * (max_len - len(input_ids[i])), dtype=torch.long), input_ids[i]])
+            label_ids[i] = torch.cat([torch.tensor([-100] * (max_len - len(label_ids[i])), dtype=torch.long), label_ids[i]])
         # convert to tensor
         input_ids = torch.stack(input_ids)
         label_ids = torch.stack(label_ids)
