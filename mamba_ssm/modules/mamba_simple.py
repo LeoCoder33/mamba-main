@@ -116,7 +116,7 @@ class Mamba(nn.Module):
 
         self.out_proj = nn.Linear(self.d_inner, self.d_model, bias=bias, **factory_kwargs)
 
-    def forward(self, hidden_states, inference_params=None):
+    def forward(self, hidden_states, first_step=False, inference_params=None):
         """
         hidden_states: (B, L, D)
         Returns: same shape as hidden_states
@@ -157,6 +157,7 @@ class Mamba(nn.Module):
                 self.D.float(),
                 delta_bias=self.dt_proj.bias.float(),
                 delta_softplus=True,
+                first_step=first_step
             )
         else:
             x, z = xz.chunk(2, dim=1)
@@ -335,7 +336,7 @@ class Block(nn.Module):
             ), "Only LayerNorm and RMSNorm are supported for fused_add_norm"
 
     def forward(
-        self, hidden_states: Tensor, residual: Optional[Tensor] = None, inference_params=None
+        self, hidden_states: Tensor, residual: Optional[Tensor] = None, first_step=False, inference_params=None
     ):
         r"""Pass the input through the encoder layer.
 
@@ -359,7 +360,7 @@ class Block(nn.Module):
                 residual_in_fp32=self.residual_in_fp32,
                 eps=self.norm.eps,
             )
-        hidden_states = self.mixer(hidden_states, inference_params=inference_params)
+        hidden_states = self.mixer(hidden_states, first_step=first_step, inference_params=inference_params)
         return hidden_states, residual
 
     def allocate_inference_cache(self, batch_size, max_seqlen, dtype=None, **kwargs):

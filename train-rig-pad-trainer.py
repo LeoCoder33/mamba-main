@@ -10,10 +10,10 @@ import dataset
 from dataclasses import dataclass
 from tqdm import tqdm
 from torch.utils.data import Dataset
-from torch.utils.data import DataLoader
+
 from transformers import AutoTokenizer, TrainingArguments
 from transformers import Trainer
-from torch.cuda.amp import GradScaler, autocast
+
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
 
 
@@ -108,23 +108,43 @@ class DataCollatorForSFTDataset(object):
             attention_mask=input_ids.ne(self.tokenizer.pad_token_id),
         )
 
-def loss_function(model, inputs, return_outputs=False):
-    input_ids = inputs.pop("input_ids")
-    lm_logits = model(input_ids).logits
-    labels = inputs.pop("label_ids").to(input_ids.device)
-    shift_logits = lm_logits[:, :-1, :].contiguous()
-    labels = labels[:, 1:].contiguous()
-    loss_fct = torch.nn.CrossEntropyLoss()
-    lm_loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), labels.view(-1))
-    return lm_loss
 
-def save_model(model, tokenizer, output_dir):
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-    torch.save(model.state_dict(), f"{output_dir}/pytorch_model.bin")
-    tokenizer.save_pretrained(output_dir)
-    # https://huggingface.co/state-spaces/mamba-130m/blob/main/config.json
-    json_str = """
+class SFTDataModule():
+    def __init__(self, tokenizer, data_path: str):
+        self.dataset = SFTDataset(tokenizer=tokenizer, data_path=data_path)
+        self.data_collator = DataCollatorForSFTDataset(tokenizer=tokenizer)
+
+
+class MambaTrainer(Trainer):
+    def compute_loss(self, model, inputs, return_outputs=False):
+        # input_ids = inputs.pop("input_ids")
+        # label_ids = inputs.pop("label_ids")
+        # labels = label_ids.to(input_ids.device)
+        # concat_ids = torch.cat([input_ids, label_ids], dim=-1)
+        # lm_logits = model(concat_ids).logits
+        # shift_logits = lm_logits[:, input_ids.shape(1):, :]
+        # loss_fct = torch.nn.CrossEntropyLoss()
+        # q = shift_logits.view(-1, shift_logits.size(-1)), labels.view(-1)
+        # lm_loss = loss_fct(q)
+        input_ids = inputs.pop("input_ids")
+        lm_logits = model(input_ids).logits
+        labels = inputs.pop("label_ids").to(input_ids.device)
+        shift_logits = lm_logits[:, :-1, :].contiguous()
+        labels = labels[:, 1:].contiguous()
+
+        loss_fct = torch.nn.CrossEntropyLoss()
+        lm_loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), labels.view(-1))
+        return lm_loss
+
+    def save_model(self, output_dir, _internal_call=None):
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
+        torch.save(self.model.state_dict(), f"{output_dir}/pytorch_model.bin")
+        self.tokenizer.save_pretrained(output_dir)
+
+        # https://huggingface.co/state-spaces/mamba-130m/blob/main/config.json
+        json_str = """
 {
     "d_model": 768,
     "n_layer": 24,
@@ -135,8 +155,8 @@ def save_model(model, tokenizer, output_dir):
     "fused_add_norm": true,
     "pad_vocab_size_multiple": 8
 }"""
-    with open(f"{output_dir}/config.json", 'w') as f:
-        f.write(json_str)
+        with open(f"{output_dir}/config.json", 'w') as f:
+            f.write(json_str)
 
 
 def run(args):
@@ -145,42 +165,31 @@ def run(args):
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer)
     tokenizer.eos_token = "<|endoftext|>"
     tokenizer.pad_token = tokenizer.eos_token
-    # Initialize the data collator
-    data_collator = DataCollatorForSFTDataset(tokenizer=tokenizer)
-    # Initialize dataset
-    dataset = SFTDataset(tokenizer=tokenizer, data_path=args.data_path)
-    train_dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False, collate_fn=data_collator)
-    # optimizer
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate)
+    data_module = SFTDataModule(
+        tokenizer=tokenizer,
+        data_path=args.data_path,
+    )
 
-    scaler = GradScaler()
+    trainer = MambaTrainer(
+        model=model,
+        train_dataset=data_module.dataset,
+        tokenizer=tokenizer,
+        args=TrainingArguments(
+            learning_rate=args.learning_rate,
+            num_train_epochs=args.num_epochs,
+            per_device_train_batch_size=args.batch_size,
+            gradient_accumulation_steps=args.gradient_accumulation_steps,
+            optim=args.optim,
+            output_dir=args.output,
+            save_total_limit=2,
+            logging_steps=50,
+            save_steps=500,
+        ),
+        data_collator=data_module.data_collator,
+    )
 
-    for epoch in range(3):
-        model.train()
-        for i, batch in enumerate(tqdm(train_dataloader)):
-            optimizer.zero_grad()
-            inputs = batch
-            # to "cuda"
-            for k, v in inputs.items():
-                inputs[k] = v.to("cuda")
-            # autocast and scale gradient for fp16 training
-            with autocast():
-                input_ids = inputs.pop("input_ids")
-                lm_logits = model(input_ids, False).logits
-                labels = inputs.pop("label_ids").to(input_ids.device)
-                shift_logits = lm_logits[:, :-1, :].contiguous()
-                labels = labels[:, 1:].contiguous()
-                loss_fct = torch.nn.CrossEntropyLoss()
-                lm_loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), labels.view(-1))
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
-    model.eval()
-    # save model
-    save_model(model, tokenizer, args.output)
-
-
-
+    trainer.train()
+    trainer.save_model(args.output)
 
 
 if __name__ == "__main__":
