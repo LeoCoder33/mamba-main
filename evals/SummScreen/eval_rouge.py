@@ -1,7 +1,7 @@
 import datasets
 rouge = datasets.load_metric('rouge')
-ref_path = "./output/mamba-1.4b/ref-tms_test.txt"
-pre_path = "./output/mamba-1.4b/tms_test.txt"
+ref_path = "./output/rig-pad/mamba-1.4b/ref-tms_test.txt"
+pre_path = "./output/rig-pad/mamba-1.4b/tms_test.txt"
 with open(ref_path, 'r') as f:
     references = f.readlines()
 with open(pre_path, 'r') as f:
