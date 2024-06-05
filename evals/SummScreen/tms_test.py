@@ -151,6 +151,7 @@ for i, line in enumerate(tqdm(lines)):
             answer = tokenizer.decode(out.sequences[0].tolist()[len(input_ids[0]):])
             answer = answer.split("<|endoftext|>")[0]
             print(answer)
+
             answers.append(answer)
             gen_length.append(len(answer))
             # lines[i]["pred"] = answer
@@ -165,3 +166,5 @@ with open(file_name, "w") as fp:
     print(bleu_score)
     fp.write("avg generation steps: {}, bleu: {:.4f}".format(
     sum(gen_length) / len(gen_length), bleu_score))
+
+

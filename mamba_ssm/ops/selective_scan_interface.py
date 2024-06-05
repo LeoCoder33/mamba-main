@@ -164,7 +164,7 @@ class MambaInnerFn(torch.autograd.Function):
     def forward(ctx, xz, conv1d_weight, conv1d_bias, x_proj_weight, delta_proj_weight,
                 out_proj_weight, out_proj_bias,
                 A, B=None, C=None, D=None, delta_bias=None, B_proj_bias=None,
-                C_proj_bias=None, delta_softplus=True, checkpoint_lvl=1):
+                C_proj_bias=None, delta_softplus=True, checkpoint_lvl=1, first_step=False):
         """
              xz: (batch, dim, seqlen)
         """
@@ -222,9 +222,44 @@ class MambaInnerFn(torch.autograd.Function):
                 C = C.contiguous()
         if D is not None:
             D = D.contiguous()
-        out, scan_intermediates, out_z = selective_scan_cuda.fwd(
-            conv1d_out, delta, A, B, C, D, z, delta_bias, delta_softplus
-        )
+        # chunk conv1d_out and z to avoid OOM
+        # chunk size:
+        # chunk_size = 10 * 1024
+        # if conv1d_out.shape[-1] > chunk_size:
+        #     chunk_num = conv1d_out.shape[-1] // chunk_size + 1
+        #     out_list, out_z_list, scan_intermediates_list = [], [], []
+        #     # conv1d_out_list, z_list, delta_list, B_list, C_list, out_list, out_z_list, scan_intermediates_list = [], [], [], [], [], [], [], []
+        #     # for i in range(chunk_num):
+        #     #     conv1d_out_list.append(conv1d_out[:, :, i * chunk_size:(i + 1) * chunk_size])
+        #     #     z_list.append(z[:, :, i * chunk_size:(i + 1) * chunk_size])
+        #     #     delta_list.append(delta[:, :, i * chunk_size:(i + 1) * chunk_size])
+        #     #     B_list.append(B[:,:,:, i * chunk_size:(i + 1) * chunk_size])
+        #     #     C_list.append(C[:,:,:, i * chunk_size:(i + 1) * chunk_size])
+        #     for i in range(chunk_num):
+        #         conv1d_out_piece = conv1d_out[..., i * chunk_size:(i + 1) * chunk_size].contiguous()
+        #         z_piece = z[..., i * chunk_size:(i + 1) * chunk_size].contiguous()
+        #         delta_piece = delta[..., i * chunk_size:(i + 1) * chunk_size].contiguous()
+        #         B_piece = B[..., i * chunk_size:(i + 1) * chunk_size].contiguous()
+        #         C_piece = C[..., i * chunk_size:(i + 1) * chunk_size].contiguous()
+        #         out, scan_intermediates, out_z = selective_scan_cuda.fwd(
+        #             conv1d_out_piece, delta_piece, A, B_piece, C_piece, D, z_piece, delta_bias, delta_softplus
+        #         )
+        #         out_list.append(out)
+        #         out_z_list.append(out_z)
+        #         scan_intermediates_list.append(scan_intermediates)
+        #     out = torch.cat(out_list, dim=-1)
+        #     out_z = torch.cat(out_z_list, dim=-1)
+        #     scan_intermediates = torch.cat(scan_intermediates_list, dim=-2)
+        # else:
+        #     out, scan_intermediates, out_z = selective_scan_cuda.fwd(
+        #         conv1d_out, delta, A, B, C, D, z, delta_bias, delta_softplus
+        #     )
+        if first_step:
+            out, scan_intermediates, out_z = selective_scan_cuda.fwd(
+                conv1d_out, delta, A, B, C, D, z, delta_bias, delta_softplus
+            )
+        else:
+            conv1d_out.cat((conv1d_out, conv1d_out), dim=-1)
         ctx.delta_softplus = delta_softplus
         ctx.out_proj_bias_is_None = out_proj_bias is None
         ctx.checkpoint_lvl = checkpoint_lvl
@@ -312,11 +347,11 @@ def mamba_inner_fn(
     xz, conv1d_weight, conv1d_bias, x_proj_weight, delta_proj_weight,
     out_proj_weight, out_proj_bias,
     A, B=None, C=None, D=None, delta_bias=None, B_proj_bias=None,
-    C_proj_bias=None, delta_softplus=True
+    C_proj_bias=None, delta_softplus=True, first_step=False
 ):
     return MambaInnerFn.apply(xz, conv1d_weight, conv1d_bias, x_proj_weight, delta_proj_weight,
                               out_proj_weight, out_proj_bias,
-                              A, B, C, D, delta_bias, B_proj_bias, C_proj_bias, delta_softplus)
+                              A, B, C, D, delta_bias, B_proj_bias, C_proj_bias, delta_softplus, first_step=first_step)
 
 
 def mamba_inner_ref(
