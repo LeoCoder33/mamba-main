@@ -3,7 +3,6 @@
 import torch
 import torch.nn.functional as F
 from torch.cuda.amp import custom_bwd, custom_fwd
-
 from einops import rearrange, repeat
 
 try:
@@ -260,7 +259,9 @@ class MambaInnerFn(torch.autograd.Function):
             )
         else:
             # conv1d_out: (B, D, L) A: (D, N) B: (B, N, L) C: (B, 1, N, L) D: (D) z: (B, D, L) delta: (B, D, L)
-            conv1d_out.cat((conv1d_out, conv1d_out), dim=-1)
+            batch = conv1d_out.shape[0]
+            d_model = conv1d_out.shape[1]
+            conv1d_out.cat((torch.ones((batch, d_model)), conv1d_out), dim=-1)
         ctx.delta_softplus = delta_softplus
         ctx.out_proj_bias_is_None = out_proj_bias is None
         ctx.checkpoint_lvl = checkpoint_lvl
