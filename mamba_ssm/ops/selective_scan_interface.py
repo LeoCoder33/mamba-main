@@ -259,6 +259,7 @@ class MambaInnerFn(torch.autograd.Function):
                 conv1d_out, delta, A, B, C, D, z, delta_bias, delta_softplus
             )
         else:
+            # conv1d_out: (B, D, L) A: (D, N) B: (B, N, L) C: (B, 1, N, L) D: (D) z: (B, D, L) delta: (B, D, L)
             conv1d_out.cat((conv1d_out, conv1d_out), dim=-1)
         ctx.delta_softplus = delta_softplus
         ctx.out_proj_bias_is_None = out_proj_bias is None
@@ -351,7 +352,7 @@ def mamba_inner_fn(
 ):
     return MambaInnerFn.apply(xz, conv1d_weight, conv1d_bias, x_proj_weight, delta_proj_weight,
                               out_proj_weight, out_proj_bias,
-                              A, B, C, D, delta_bias, B_proj_bias, C_proj_bias, delta_softplus, first_step=first_step)
+                              A, B, C, D, delta_bias, B_proj_bias, C_proj_bias, delta_softplus, first_step)
 
 
 def mamba_inner_ref(
