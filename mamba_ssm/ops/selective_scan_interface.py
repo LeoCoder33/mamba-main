@@ -79,7 +79,7 @@ class SelectiveScanFn(torch.autograd.Function):
 
 
 def selective_scan_fn(u, delta, A, B, C, D=None, z=None, delta_bias=None, delta_softplus=False,
-                     return_last_state=False):
+                      return_last_state=False):
     """if return_last_state is True, returns (out, last_state)
     last_state has shape (batch, dim, dstate). Note that the gradient of the last state is
     not considered in the backward pass.
@@ -88,7 +88,7 @@ def selective_scan_fn(u, delta, A, B, C, D=None, z=None, delta_bias=None, delta_
 
 
 def selective_scan_ref(u, delta, A, B, C, D=None, z=None, delta_bias=None, delta_softplus=False,
-                      return_last_state=False):
+                       return_last_state=False):
     """
     u: r(B D L)
     delta: r(B D L)
@@ -148,7 +148,7 @@ def selective_scan_ref(u, delta, A, B, C, D=None, z=None, delta_bias=None, delta
         if y.is_complex():
             y = y.real * 2
         ys.append(y)
-    y = torch.stack(ys, dim=2) # (batch dim L)
+    y = torch.stack(ys, dim=2)  # (batch dim L)
     out = y if D is None else y + u * rearrange(D, "d -> d 1")
     if z is not None:
         out = out * F.silu(z)
@@ -190,7 +190,7 @@ class MambaInnerFn(torch.autograd.Function):
         # We want delta to have d as the slowest moving dimension
         # and L as the fastest moving dimension, since those are what the ssm_scan kernel expects.
         x_dbl = F.linear(rearrange(conv1d_out, 'b d l -> (b l) d'), x_proj_weight)  # (bl d)
-        delta = rearrange(delta_proj_weight @ x_dbl[:, :delta_rank].t(), "d (b l) -> b d l", l = L)
+        delta = rearrange(delta_proj_weight @ x_dbl[:, :delta_rank].t(), "d (b l) -> b d l", l=L)
         ctx.is_variable_B = B is None
         ctx.is_variable_C = C is None
         ctx.B_proj_bias_is_None = B_proj_bias is None
@@ -261,7 +261,23 @@ class MambaInnerFn(torch.autograd.Function):
             # conv1d_out: (B, D, L) A: (D, N) B: (B, N, L) C: (B, 1, N, L) D: (D) z: (B, D, L) delta: (B, D, L)
             batch = conv1d_out.shape[0]
             d_model = conv1d_out.shape[1]
-            conv1d_out.cat((torch.ones((batch, d_model)), conv1d_out), dim=-1)
+            conv1d_out[:, :, 0] = torch.ones((batch, d_model))
+            delta_bias = torch.zeros((d_model), dtype=torch.float32, device='cuda:0')
+            delta = torch.zeros((batch, d_model, L), dtype=torch.float16, device='cuda:0')
+            delta_softplus = False
+            out, scan_intermediates, out_z = selective_scan_cuda.fwd(
+                conv1d_out, delta, A, B, C, D, z, delta_bias, delta_softplus
+            )
+            # delta_A = delta[..., 0] * A
+            # inverse_delta_A = torch.inverse(delta_A)
+            # exp_delta_A_minus_I = torch.exp(delta_A - I)
+            # result = inverse_delta_A * exp_delta_A_minus_I * delta * B[..., 0]
+            # print('B_bar', result)
+            print('x0', conv1d_out[:, :, 0])
+            print('h0', out[:, :, 0])
+            print('z0', out_z[:, :, 0])
+
+
         ctx.delta_softplus = delta_softplus
         ctx.out_proj_bias_is_None = out_proj_bias is None
         ctx.checkpoint_lvl = checkpoint_lvl
@@ -290,7 +306,7 @@ class MambaInnerFn(torch.autograd.Function):
                 x, conv1d_weight, conv1d_bias, None, None, None, True
             )
             delta = rearrange(delta_proj_weight @ x_dbl[:, :delta_rank].t(),
-                              "d (b l) -> b d l", l = L)
+                              "d (b l) -> b d l", l=L)
         # The kernel supports passing in a pre-allocated dz (e.g., in case we want to fuse the
         # backward of selective_scan_cuda with the backward of chunk).
         dxz = torch.empty_like(xz)  # (batch, dim, seqlen)
@@ -346,10 +362,10 @@ class MambaInnerFn(torch.autograd.Function):
 
 
 def mamba_inner_fn(
-    xz, conv1d_weight, conv1d_bias, x_proj_weight, delta_proj_weight,
-    out_proj_weight, out_proj_bias,
-    A, B=None, C=None, D=None, delta_bias=None, B_proj_bias=None,
-    C_proj_bias=None, delta_softplus=True, first_step=False
+        xz, conv1d_weight, conv1d_bias, x_proj_weight, delta_proj_weight,
+        out_proj_weight, out_proj_bias,
+        A, B=None, C=None, D=None, delta_bias=None, B_proj_bias=None,
+        C_proj_bias=None, delta_softplus=True, first_step=False
 ):
     return MambaInnerFn.apply(xz, conv1d_weight, conv1d_bias, x_proj_weight, delta_proj_weight,
                               out_proj_weight, out_proj_bias,
@@ -357,10 +373,10 @@ def mamba_inner_fn(
 
 
 def mamba_inner_ref(
-    xz, conv1d_weight, conv1d_bias, x_proj_weight, delta_proj_weight,
-    out_proj_weight, out_proj_bias,
-    A, B=None, C=None, D=None, delta_bias=None, B_proj_bias=None,
-    C_proj_bias=None, delta_softplus=True
+        xz, conv1d_weight, conv1d_bias, x_proj_weight, delta_proj_weight,
+        out_proj_weight, out_proj_bias,
+        A, B=None, C=None, D=None, delta_bias=None, B_proj_bias=None,
+        C_proj_bias=None, delta_softplus=True
 ):
     assert causal_conv1d_fn is not None, "causal_conv1d_fn is not available. Please install causal-conv1d."
     L = xz.shape[-1]
