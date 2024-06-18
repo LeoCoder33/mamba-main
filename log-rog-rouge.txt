@@ -1,0 +1,13 @@
+/dev_data/wy/mamba-wy/mamba-main/evals/SummScreen/eval_rouge.py:2: FutureWarning: load_metric is deprecated and will be removed in the next major version of datasets. Use 'evaluate.load' instead, from the new library 🤗 Evaluate: https://huggingface.co/docs/evaluate
+  rouge = datasets.load_metric('rouge')
+/dev_data/wy/conda/envs/mamba/lib/python3.9/site-packages/datasets/load.py:759: FutureWarning: The repository for rouge contains custom code which must be executed to correctly load the metric. You can inspect the repository content at https://raw.githubusercontent.com/huggingface/datasets/2.19.1/metrics/rouge/rouge.py
+You can avoid this message in future by passing the argument `trust_remote_code=True`.
+Passing `trust_remote_code=True` will be mandatory to load this metric from the next major release of `datasets`.
+  warnings.warn(
+Using the latest cached version of the module from /home/wy/.cache/huggingface/modules/datasets_modules/metrics/rouge/457c405cab0bd19db749b46bf15a1a3cff4d54f50e7ab868c293e5ece288425e (last modified on Thu May  9 12:31:34 2024) since it couldn't be found locally at rouge, or remotely on the Hugging Face Hub.
+['rouge1', 'rouge2', 'rougeL', 'rougeLsum']
+{'rouge1': AggregateScore(low=Score(precision=0.40299981266637197, recall=0.43348319773508187, fmeasure=0.39220112096983967), mid=Score(precision=0.41019452257164146, recall=0.4384234170268887, fmeasure=0.3965205965304932), high=Score(precision=0.4173388801563732, recall=0.4434856930641673, fmeasure=0.40149390749114333)), 'rouge2': AggregateScore(low=Score(precision=0.09269836628562339, recall=0.09641303036941902, fmeasure=0.08872971326690832), mid=Score(precision=0.09526716176045716, recall=0.09862001120093045, fmeasure=0.09073004836755924), high=Score(precision=0.09768979906771452, recall=0.100692500733835, fmeasure=0.09267255519951556)), 'rougeL': AggregateScore(low=Score(precision=0.17836476177717378, recall=0.19466146349135757, fmeasure=0.17408457944333672), mid=Score(precision=0.18115146372307928, recall=0.19707609587631947, fmeasure=0.17563964043809072), high=Score(precision=0.1839388887989787, recall=0.19944072022992504, fmeasure=0.17717120748406973)), 'rougeLsum': AggregateScore(low=Score(precision=0.17839628272166136, recall=0.19465579180810255, fmeasure=0.17411911134651503), mid=Score(precision=0.18119862997950728, recall=0.19709257292513888, fmeasure=0.1756572733639273), high=Score(precision=0.1841204650724973, recall=0.1996744248354591, fmeasure=0.17722417573572155))}
+0.3965205965304932
+0.09073004836755924
+0.17563964043809072
+0.1756572733639273
