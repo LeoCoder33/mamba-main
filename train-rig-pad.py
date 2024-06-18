@@ -67,9 +67,9 @@ class SFTDataset(Dataset):
             #     context = context[:1024*15] + context[-1024*15:]
             context = f"Summarize the content into a few short sentences. Content:\n{context}\n\nSummary:\n"
             # trunk test
-            # context = f"Summarize the"
+            context = f"Summarize the"
             label = f"{ex['response']}{tokenizer.eos_token}"
-            # label = ""
+            label = ""
             context_id = tokenizer.encode(context)
             label_id = tokenizer.encode(label)
             all_input_ids.append(torch.LongTensor(context_id))

@@ -261,9 +261,15 @@ class MambaInnerFn(torch.autograd.Function):
             # conv1d_out: (B, D, L) A: (D, N) B: (B, N, L) C: (B, 1, N, L) D: (D) z: (B, D, L) delta: (B, D, L)
             batch = conv1d_out.shape[0]
             d_model = conv1d_out.shape[1]
-            conv1d_out[:, :, 0] = torch.ones((batch, d_model))
+            x_len = conv1d_out.shape[2]
+            conv1d_out = torch.ones((batch, d_model, x_len), dtype=torch.float16, device='cuda:0')
             delta_bias = torch.zeros((d_model), dtype=torch.float32, device='cuda:0')
-            delta = torch.zeros((batch, d_model, L), dtype=torch.float16, device='cuda:0')
+            # delta = torch.zeros((batch, d_model, L), dtype=torch.float16, device='cuda:0')
+            # A = torch.zeros(A.shape, dtype=torch.float32, device='cuda:0')
+            A[:,0] = 0
+            B = torch.zeros(B.shape, dtype=torch.float16, device='cuda:0')
+            C = torch.ones(C.shape, dtype=torch.float16, device='cuda:0')
+            D = torch.ones(D.shape, dtype=torch.float32, device='cuda:0')
             delta_softplus = False
             out, scan_intermediates, out_z = selective_scan_cuda.fwd(
                 conv1d_out, delta, A, B, C, D, z, delta_bias, delta_softplus
