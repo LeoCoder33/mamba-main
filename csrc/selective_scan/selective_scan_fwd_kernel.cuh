@@ -259,8 +259,10 @@ void selective_scan_fwd_kernel(SSMParamsBase params) {
                         : (!kIsVariableB ? BC_val[r] * C_vals[i] : C_vals[i]);
                     if constexpr (!kIsComplex) {
                         out_vals[r][i] += thread_data[i].y * C_val;
+                        // out_vals[r][i] = 0;
                     } else {
                         out_vals[r][i] += (complex_t(thread_data[i].z, thread_data[i].w) * C_val).real_ * 2;
+                        // out_vals[r][i] = 0;
                     }
                 }
             }

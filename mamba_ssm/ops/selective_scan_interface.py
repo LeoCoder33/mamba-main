@@ -1,4 +1,5 @@
 # Copyright (c) 2023, Tri Dao, Albert Gu.
+import random
 
 import torch
 import torch.nn.functional as F
@@ -259,27 +260,15 @@ class MambaInnerFn(torch.autograd.Function):
             )
         else:
             # conv1d_out: (B, D, L) A: (D, N) B: (B, N, L) C: (B, 1, N, L) D: (D) z: (B, D, L) delta: (B, D, L)
-            batch = conv1d_out.shape[0]
-            d_model = conv1d_out.shape[1]
-            x_len = conv1d_out.shape[2]
-            conv1d_out = torch.ones((batch, d_model, x_len), dtype=torch.float16, device='cuda:0')
-            delta_bias = torch.zeros((d_model), dtype=torch.float32, device='cuda:0')
-            # delta = torch.zeros((batch, d_model, L), dtype=torch.float16, device='cuda:0')
-            # A = torch.zeros(A.shape, dtype=torch.float32, device='cuda:0')
-            A[:,0] = 0
-            B = torch.zeros(B.shape, dtype=torch.float16, device='cuda:0')
-            C = torch.ones(C.shape, dtype=torch.float16, device='cuda:0')
-            D = torch.ones(D.shape, dtype=torch.float32, device='cuda:0')
+            print('x0', conv1d_out[:, :, 0])
+            conv1d_out[..., 0] = (1-D) * conv1d_out[..., 0]
+            delta[..., 0] = (1 - delta_bias)
+            B[...,0] = 1/(A.shape[-1])
+            C[...,0] = 1
             delta_softplus = False
             out, scan_intermediates, out_z = selective_scan_cuda.fwd(
                 conv1d_out, delta, A, B, C, D, z, delta_bias, delta_softplus
             )
-            # delta_A = delta[..., 0] * A
-            # inverse_delta_A = torch.inverse(delta_A)
-            # exp_delta_A_minus_I = torch.exp(delta_A - I)
-            # result = inverse_delta_A * exp_delta_A_minus_I * delta * B[..., 0]
-            # print('B_bar', result)
-            print('x0', conv1d_out[:, :, 0])
             print('h0', out[:, :, 0])
             print('z0', out_z[:, :, 0])
 
