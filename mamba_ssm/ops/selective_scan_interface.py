@@ -164,13 +164,12 @@ class MambaInnerFn(torch.autograd.Function):
     def forward(ctx, xz, conv1d_weight, conv1d_bias, x_proj_weight, delta_proj_weight,
                 out_proj_weight, out_proj_bias,
                 A, B=None, C=None, D=None, delta_bias=None, B_proj_bias=None,
-                C_proj_bias=None, delta_softplus=True, checkpoint_lvl=1, first_step=False):
+                C_proj_bias=None, delta_softplus=True, first_step=False, START=0, END=0, checkpoint_lvl=1):
         """
              xz: (batch, dim, seqlen)
         """
         assert causal_conv1d_cuda is not None, "causal_conv1d_cuda is not available. Please install causal-conv1d."
         assert checkpoint_lvl in [0, 1]
-        L = xz.shape[-1]
         delta_rank = delta_proj_weight.shape[1]
         d_state = A.shape[-1] * (1 if not A.is_complex() else 2)
         if torch.is_autocast_enabled():
@@ -187,10 +186,14 @@ class MambaInnerFn(torch.autograd.Function):
         conv1d_out = causal_conv1d_cuda.causal_conv1d_fwd(
             x, conv1d_weight, conv1d_bias, None, None, None, True
         )
+        conv1d_out = conv1d_out[:, :, START:END]
         # We're being very careful here about the layout, to avoid extra transposes.
         # We want delta to have d as the slowest moving dimension
         # and L as the fastest moving dimension, since those are what the ssm_scan kernel expects.
         x_dbl = F.linear(rearrange(conv1d_out, 'b d l -> (b l) d'), x_proj_weight)  # (bl d)
+        L = conv1d_out.shape[-1]
+        # chunk z
+        z = z[:, :, START:END]
         delta = rearrange(delta_proj_weight @ x_dbl[:, :delta_rank].t(), "d (b l) -> b d l", l=L)
         ctx.is_variable_B = B is None
         ctx.is_variable_C = C is None
@@ -222,56 +225,16 @@ class MambaInnerFn(torch.autograd.Function):
                 C = C.contiguous()
         if D is not None:
             D = D.contiguous()
-        # chunk conv1d_out and z to avoid OOM
-        # chunk size:
-        # chunk_size = 10 * 1024
-        # if conv1d_out.shape[-1] > chunk_size:
-        #     chunk_num = conv1d_out.shape[-1] // chunk_size + 1
-        #     out_list, out_z_list, scan_intermediates_list = [], [], []
-        #     # conv1d_out_list, z_list, delta_list, B_list, C_list, out_list, out_z_list, scan_intermediates_list = [], [], [], [], [], [], [], []
-        #     # for i in range(chunk_num):
-        #     #     conv1d_out_list.append(conv1d_out[:, :, i * chunk_size:(i + 1) * chunk_size])
-        #     #     z_list.append(z[:, :, i * chunk_size:(i + 1) * chunk_size])
-        #     #     delta_list.append(delta[:, :, i * chunk_size:(i + 1) * chunk_size])
-        #     #     B_list.append(B[:,:,:, i * chunk_size:(i + 1) * chunk_size])
-        #     #     C_list.append(C[:,:,:, i * chunk_size:(i + 1) * chunk_size])
-        #     for i in range(chunk_num):
-        #         conv1d_out_piece = conv1d_out[..., i * chunk_size:(i + 1) * chunk_size].contiguous()
-        #         z_piece = z[..., i * chunk_size:(i + 1) * chunk_size].contiguous()
-        #         delta_piece = delta[..., i * chunk_size:(i + 1) * chunk_size].contiguous()
-        #         B_piece = B[..., i * chunk_size:(i + 1) * chunk_size].contiguous()
-        #         C_piece = C[..., i * chunk_size:(i + 1) * chunk_size].contiguous()
-        #         out, scan_intermediates, out_z = selective_scan_cuda.fwd(
-        #             conv1d_out_piece, delta_piece, A, B_piece, C_piece, D, z_piece, delta_bias, delta_softplus
-        #         )
-        #         out_list.append(out)
-        #         out_z_list.append(out_z)
-        #         scan_intermediates_list.append(scan_intermediates)
-        #     out = torch.cat(out_list, dim=-1)
-        #     out_z = torch.cat(out_z_list, dim=-1)
-        #     scan_intermediates = torch.cat(scan_intermediates_list, dim=-2)
-        # else:
-        #     out, scan_intermediates, out_z = selective_scan_cuda.fwd(
-        #         conv1d_out, delta, A, B, C, D, z, delta_bias, delta_softplus
-        #     )
         if first_step:
             out, scan_intermediates, out_z = selective_scan_cuda.fwd(
                 conv1d_out, delta, A, B, C, D, z, delta_bias, delta_softplus
             )
         else:
             # conv1d_out: (B, D, L) A: (D, N) B: (B, N, L) C: (B, 1, N, L) D: (D) z: (B, D, L) delta: (B, D, L)
-            print('x0', conv1d_out[:, :, 0])
-            conv1d_out[..., 0] = (1-D) * conv1d_out[..., 0]
-            delta[..., 0] = (1 - delta_bias)
-            B[...,0] = 1/(A.shape[-1])
-            C[...,0] = 1
-            delta_softplus = False
+            C[..., 0] = 0
             out, scan_intermediates, out_z = selective_scan_cuda.fwd(
                 conv1d_out, delta, A, B, C, D, z, delta_bias, delta_softplus
             )
-            print('h0', out[:, :, 0])
-            print('z0', out_z[:, :, 0])
-
 
         ctx.delta_softplus = delta_softplus
         ctx.out_proj_bias_is_None = out_proj_bias is None
@@ -360,11 +323,11 @@ def mamba_inner_fn(
         xz, conv1d_weight, conv1d_bias, x_proj_weight, delta_proj_weight,
         out_proj_weight, out_proj_bias,
         A, B=None, C=None, D=None, delta_bias=None, B_proj_bias=None,
-        C_proj_bias=None, delta_softplus=True, first_step=False
+        C_proj_bias=None, delta_softplus=True, first_step=False, START=0, END=0
 ):
     return MambaInnerFn.apply(xz, conv1d_weight, conv1d_bias, x_proj_weight, delta_proj_weight,
                               out_proj_weight, out_proj_bias,
-                              A, B, C, D, delta_bias, B_proj_bias, C_proj_bias, delta_softplus, first_step)
+                              A, B, C, D, delta_bias, B_proj_bias, C_proj_bias, delta_softplus, first_step, START, END)
 
 
 def mamba_inner_ref(

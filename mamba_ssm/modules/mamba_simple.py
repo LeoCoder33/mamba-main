@@ -116,7 +116,7 @@ class Mamba(nn.Module):
 
         self.out_proj = nn.Linear(self.d_inner, self.d_model, bias=bias, **factory_kwargs)
 
-    def forward(self, hidden_states, first_step=False, inference_params=None):
+    def forward(self, hidden_states, first_step=False, START=0, END=0, inference_params=None):
         """
         hidden_states: (B, L, D)
         Returns: same shape as hidden_states
@@ -157,7 +157,9 @@ class Mamba(nn.Module):
                 self.D.float(),
                 delta_bias=self.dt_proj.bias.float(),
                 delta_softplus=True,
-                first_step=first_step
+                first_step=first_step,
+                START=START,
+                END=END
             )
         else:
             x, z = xz.chunk(2, dim=1)
@@ -360,7 +362,9 @@ class Block(nn.Module):
                 residual_in_fp32=self.residual_in_fp32,
                 eps=self.norm.eps,
             )
-        hidden_states = self.mixer(hidden_states, first_step=first_step, inference_params=inference_params)
+        l = hidden_states.shape[1]
+        temp_hidden_states = self.mixer(hidden_states, first_step=True, START=0, END=l, inference_params=inference_params)
+        temp_hidden_states_1 = self.mixer(hidden_states, first_step=False, START=1, END=l, inference_params=inference_params)
         return hidden_states, residual
 
     def allocate_inference_cache(self, batch_size, max_seqlen, dtype=None, **kwargs):
