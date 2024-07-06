@@ -226,9 +226,18 @@ class MambaInnerFn(torch.autograd.Function):
         if D is not None:
             D = D.contiguous()
         if first_step:
+            delta_softplus = False
+            delta[..., 0] = 1 - delta_bias
             out, scan_intermediates, out_z = selective_scan_cuda.fwd(
                 conv1d_out, delta, A, B, C, D, z, delta_bias, delta_softplus
             )
+            conv1d_out[..., 0] = out[..., 0]
+            B[..., 0] = 1
+            delta[..., 0] = 1-delta_bias
+            out_1, scan_intermediates_1, out_z_1 = selective_scan_cuda.fwd(
+                conv1d_out, delta, A, B, C, D, z, delta_bias, delta_softplus
+            )
+            print(out_1[..., 1])
         else:
             # conv1d_out: (B, D, L) A: (D, N) B: (B, N, L) C: (B, 1, N, L) D: (D) z: (B, D, L) delta: (B, D, L)
             C[..., 0] = 0
